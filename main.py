@@ -11,8 +11,16 @@ warnings.filterwarnings("ignore")
 sample_name = 'podcast'
 sample_path = './samples/' + sample_name + '.wav'
 
+
+
+model_name = "medium.en"
+
 # Load the Whisper model
-model = whisper.load_model("large-v3")
+model = whisper.load_model(model_name)
+print("loaded whisper " + model_name)
+
+# Other available models
+print("other available models", whisper.available_models())
 
 # Extract the base filename without extension
 base_filename = os.path.splitext(os.path.basename(sample_path))[0]
