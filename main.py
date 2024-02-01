@@ -1,5 +1,7 @@
 import os
 import json
+from math import inf
+
 import whisper
 import warnings
 from pydub import AudioSegment
@@ -57,10 +59,14 @@ segments = concatenate_sentence_segments()
 
 audio = AudioSegment.from_file(sample_path)
 metadata = []
+durations = []
 for i, segment in enumerate(segments):
     start = float(segment['start']) * 1000  # sec to ms
     end = segment['end'] * 1000  # sec to ms
     audio_segment = audio[start:end]
+
+    duration = (end - start) / 1000  # ms to sec
+    durations.append(duration)
 
     os.makedirs(wavs_dir, exist_ok=True)
     segment_name = f"{i}.wav"
@@ -71,3 +77,7 @@ for i, segment in enumerate(segments):
 
 with open(os.path.join(output_dir, 'metadata.csv'), 'w') as f:
     f.write('\n'.join(metadata))
+
+print(f"Min Clip Duration {min(durations)}")
+print(f"Max Clip Duration {max(durations)}")
+print(f"Mean Clip Duration {sum(durations) / len(durations)}")
