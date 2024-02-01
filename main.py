@@ -7,7 +7,7 @@ import os
 warnings.filterwarnings("ignore")
 
 
-sample_name = 'short_podcast'
+sample_name = 'podcast'
 
 transcriptions_dir = './transcriptions'
 
