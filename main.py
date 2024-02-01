@@ -1,17 +1,17 @@
 import os
 import json
 import whisper
-import time
 import warnings
 from pydub import AudioSegment
 
 # Suppress all warnings
 warnings.filterwarnings("ignore")
 
-sample_name = 'podcast'
+sample_name = 'short_short_podcast'
 sample_path = './samples/' + sample_name + '.wav'
 
-
+output_dir = './output/' + sample_name
+wavs_dir = os.path.join(output_dir, 'wavs')
 
 model_name = "medium.en"
 
@@ -22,56 +22,52 @@ print("loaded whisper " + model_name)
 # Other available models
 print("other available models", whisper.available_models())
 
-# Extract the base filename without extension
-base_filename = os.path.splitext(os.path.basename(sample_path))[0]
+result = model.transcribe(sample_path, verbose=True)
 
-# Directory containing chunks of audio
-chunks_dir = os.path.join('./chunks', base_filename)
-# Directory for saving transcriptions as JSON files
-transcriptions_dir = os.path.join('./transcriptions', base_filename)
+os.makedirs(output_dir, exist_ok=True)
+with open(os.path.join(output_dir, 'transcription.json'), 'w') as f:
+    json.dump(result, f, indent=4)
 
-def chunk_audio(file_path, chunk_length_ms=30000):
-    audio = AudioSegment.from_file(file_path)
-    os.makedirs(chunks_dir, exist_ok=True)
-    num_chunks = len(audio) // chunk_length_ms + 1
+segments = result['segments']
 
-    print(f"Splitting '{base_filename}' into {num_chunks} chunks...")
 
-    for i in range(num_chunks):
-        start_ms = i * chunk_length_ms
-        end_ms = start_ms + chunk_length_ms
-        chunk = audio[start_ms:end_ms]
-        chunk_file = os.path.join(chunks_dir, f'{i}.wav')
-        chunk.export(chunk_file, format='wav')
-        print(f"Chunk {i}/{num_chunks} exported.")
+def concatenate_sentence_segments():
+    ending_punctuation = {'.', '?', '!'}
+    res = []
+    combining_segment = None
+    for i, sgmt in enumerate(segments):
+        segment_text = sgmt['text'].strip()
+        if i != len(segments) - 1 and segment_text[-1] not in ending_punctuation:
+            if combining_segment is None:
+                combining_segment = sgmt
+            if combining_segment != sgmt:
+                combining_segment['text'] += ' ' + segment_text
+        else:
+            if combining_segment is None:
+                res.append(sgmt)
+            else:
+                combining_segment['end'] = sgmt['end']
+                combining_segment['text'] += ' ' + segment_text
+                res.append(combining_segment)
+                combining_segment = None
+    return res
 
-chunk_audio(sample_path)
 
-os.makedirs(transcriptions_dir, exist_ok=True)
+segments = concatenate_sentence_segments()
 
-def transcribe_and_save(chunk_path, output_path, model):
-    start_time = time.time()
-    print(f"Transcribing: {os.path.basename(chunk_path)}")
-    result = model.transcribe(chunk_path)
-    transcription_time = time.time() - start_time
-    with open(output_path, 'w') as outfile:
-        json.dump(result, outfile, indent=4)
-    print(f"Transcription saved: {os.path.basename(output_path)}")
-    return transcription_time
+audio = AudioSegment.from_file(sample_path)
+metadata = []
+for i, segment in enumerate(segments):
+    start = float(segment['start']) * 1000  # sec to ms
+    end = segment['end'] * 1000  # sec to ms
+    audio_segment = audio[start:end]
 
-chunk_files = sorted(os.listdir(chunks_dir), key=lambda x: int(os.path.splitext(x)[0]))
+    os.makedirs(wavs_dir, exist_ok=True)
+    segment_name = f"{i}.wav"
+    segment_path = os.path.join(wavs_dir, segment_name)
+    audio_segment.export(segment_path, format='wav')
 
-total_transcription_time = 0
-for i, filename in enumerate(chunk_files):
-    chunk_path = os.path.join(chunks_dir, filename)
-    transcription_filename = os.path.splitext(filename)[0] + '.json'
-    transcription_path = os.path.join(transcriptions_dir, transcription_filename)
+    metadata.append(f"{segment_name}|{segment['text'].strip()}")
 
-    transcription_time = transcribe_and_save(chunk_path, transcription_path, model)
-    total_transcription_time += transcription_time
-
-    estimated_time_remaining = transcription_time * (len(chunk_files) - i - 1)
-    print(f"Chunk {i+1}/{len(chunk_files)} transcribed in {transcription_time:.2f} seconds.")
-    print(f"Estimated time remaining: {estimated_time_remaining:.2f} seconds.")
-
-print(f"Total transcription time: {total_transcription_time:.2f} seconds.")
+with open(os.path.join(output_dir, 'metadata.csv'), 'w') as f:
+    f.write('\n'.join(metadata))
